@@ -17,7 +17,9 @@ After installing Docker Desktop, use docker compose file(available from AUTH ser
 #### Docker Compose
 Find the docker compose file from AUTH Service REPO and use it. To run your redis docker image, execute the command:
 
+´´´´bash
 docker compose -f docker-compose-redis.yml up -d
+´´´´
 
 ##### How to verify and test?
 ##### Code Configuration
