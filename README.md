@@ -34,6 +34,42 @@ docker compose -f docker-compose-redis.yml up -d
 ##### Important to note
 ### Enable deployment servers configuration (Dev, Staging, QA and PROD)
 #### ARO - Red Hat OpenShift on Azure
+##### Setup
+###### Distributed cache - Azure Cache for Redis
+As developer, before implement Redis cache make sure to understand how the Redis Cache is functioning through ARO.
+
+Use the following referrence page to get to know how to create Azure cache for Redis
+https://learn.microsoft.com/en-us/azure/redis/dotnet-core-quickstart?pivots=azure-cache-redis
+
+##### Setting-Up Redis Cache - ARO (Azure Redhat OpenShift)
+The following README.md file gives us to understand better about setup Redis at ARO step by step.
+
+https://github.com/VolvoGroup-Internal/oneview-114458-utils/blob/main/redis-client/README.md
+
+We could not test Azure cache for Redis from our local development and only possible to verify and test it from ARO(Azure Redhat OpenShift). 
+
+##### How to do the test from Local Development
+Once push the code into REPO, deploy it into staging environment. Once the build succeeded, connect ARO through PowerShell using ARO token.
 #### Create and Enable Cluster
 #### Deployment
 #### How to verify and test?
+##### How to Get the ARO Token
+Login into 
+(https://oauth-openshift.apps.aro-delta.euw-hub02.azure.xxxx.net/oauth/authorize?client_id=console&redirect_uri=https%3A%2F%2Fconsole-openshift-console.apps.aro-delta.euw-hub02.azure.xxxxx.net%2Fauth%2Fcallback&response_type=code&scope=user)
+
+1. Click user and select "Copy Login command".
+2. Copy the token and run it from PowerShell. 
+3. Once the login succeeded, ensure the deployed staging pod and service is running in ARO.
+   
+````bash
+oc get pods
+
+oc get services
+````
+
+Map the auth service port to **8080**
+````bash
+ oc port-forward service/core-authservice-staging 8080:8080
+````
+Once the port is mapped, send the request and ensure whether the cache is working fine or not.
+http://localhost:8080/XXXX/authorizationsXXXXXXX
