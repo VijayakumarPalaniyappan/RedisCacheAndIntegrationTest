@@ -1,0 +1,183 @@
+apiVersion: template.openshift.io/v1
+kind: Template
+metadata:
+  name: ${APP_NAME}-template
+  namespace: oneview
+objects:
+  - apiVersion: v1
+    kind: Secret
+    type: Opaque
+    metadata:
+      name: ${APP_NAME}-secret
+      labels:
+        app: ${APP_NAME}
+    stringData:
+      AZURE_TENANT_ID: "${AZURE_TENANT_ID}"
+      AZURE_SERVICE_PRINCIPAL_ID: "${AZURE_SERVICE_PRINCIPAL_ID}"
+      AZURE_KEYVAULT_URL: "${AZURE_KEYVAULT_URL}"
+      AZURE_KEYVAULT_CLIENT_SECRET: "${AZURE_KEYVAULT_CLIENT_SECRET}"
+      SPLUNK_INDEX: "${SPLUNK_INDEX}"
+      SPLUNK_HECTOKEN: "${SPLUNK_HECTOKEN}"
+      SPLUNK_O11YTOKEN: "${SPLUNK_O11YTOKEN}"
+  - apiVersion: apps/v1
+    kind: Deployment
+    metadata:
+      name: ${APP_NAME}
+      namespace: oneview
+      labels:
+        app: ${APP_NAME}
+        tier: backend
+    spec:
+      selector:
+        matchLabels:
+          app: ${APP_NAME}
+      replicas: 1
+      strategy:
+        rollingUpdate:
+          maxSurge: 25%
+          maxUnavailable: 25%
+        type: RollingUpdate
+      template:
+        metadata:
+          labels:
+            app: ${APP_NAME}
+          annotations:
+            splunk.com/index: "${SPLUNK_INDEX}"
+            splunk.com/hectoken: "${SPLUNK_HECTOKEN}"
+            splunk.com/o11ytoken: "${SPLUNK_O11YTOKEN}"
+        spec:
+          containers:
+            - name: ${APP_NAME}-container
+              image: ${APP_IMAGE_NAME}
+              imagePullPolicy: Always
+              resources:
+                limits:
+                  memory: "${LIMITS_MEMORY}"
+                  cpu: "${LIMITS_CPU}"
+                requests:
+                  memory: "${REQUESTS_MEMORY}"
+                  cpu: "${REQUESTS_CPU}"
+              ports:
+                - containerPort: 8080
+                  protocol: TCP
+              env:
+                - name: AzureAdSettings__TenantId
+                  valueFrom:
+                    secretKeyRef:
+                      name: ${APP_NAME}-secret
+                      key: AZURE_TENANT_ID
+                - name: AzureAdSettings__ServicePrincipalId
+                  valueFrom:
+                    secretKeyRef:
+                      name: ${APP_NAME}-secret
+                      key: AZURE_SERVICE_PRINCIPAL_ID
+                - name: AzureKeyVault__VaultUrl
+                  valueFrom:
+                    secretKeyRef:
+                      name: ${APP_NAME}-secret
+                      key: AZURE_KEYVAULT_URL
+                - name: AzureKeyVault__ClientSecret
+                  valueFrom:
+                    secretKeyRef:
+                      name: ${APP_NAME}-secret
+                      key: AZURE_KEYVAULT_CLIENT_SECRET
+                - name: SPLUNK_OTEL_AGENT
+                  valueFrom:
+                    fieldRef:
+                      fieldPath: status.hostIP
+                - name: OTEL_EXPORTER_OTLP_ENDPOINT
+                  value: "http://$(SPLUNK_OTEL_AGENT):4318"
+                - name: OTEL_SERVICE_NAME
+                  value: ${APP_NAME}
+                - name: OTEL_RESOURCE_ATTRIBUTES
+                  value: "deployment.environment=${SPLUNK_ENV_TAG}"
+              securityContext:
+                allowPrivilegeEscalation: false
+                runAsNonRoot: true
+              volumeMounts:
+                - name: service-cert
+                  mountPath: /etc/ssl/private/web-server
+          volumes:
+            - name: service-cert
+              secret:
+                defaultMode: 420
+                secretName: ${APP_NAME}-${API_VERSION}-cert
+  - apiVersion: v1
+    kind: Service
+    metadata:
+      annotations:
+        service.beta.openshift.io/serving-cert-secret-name: ${APP_NAME}-${API_VERSION}-cert
+      name: ${APP_NAME}
+      namespace: oneview
+      labels:
+        app: ${APP_NAME}
+        tier: backend
+    spec:
+      selector:
+        app: ${APP_NAME}
+      ports:
+        - name: 8080-port
+          port: 8080
+          targetPort: 8080
+          protocol: TCP
+  - apiVersion: autoscaling/v2
+    kind: HorizontalPodAutoscaler
+    metadata:
+      name: ${APP_NAME}-hpa
+      namespace: oneview
+      labels:
+        app: ${APP_NAME}
+    spec:
+      scaleTargetRef:
+        apiVersion: apps/v1
+        kind: Deployment
+        name: ${APP_NAME}
+      minReplicas: 1
+      maxReplicas: 5
+      metrics:
+        - type: Resource
+          resource:
+            name: cpu
+            target:
+              type: Utilization
+              averageUtilization: 80
+parameters:
+  - name: APP_NAME
+    displayName: The name of the deployment
+    required: true
+  - name: APP_IMAGE_NAME
+    required: true
+  - name: API_VERSION
+    required: true
+  - name: AZURE_TENANT_ID
+    required: true
+  - name: AZURE_SERVICE_PRINCIPAL_ID
+    required: true
+  - name: AZURE_KEYVAULT_URL
+    required: true
+  - name: AZURE_KEYVAULT_CLIENT_SECRET
+    required: true
+  - name: SPLUNK_ENV_TAG
+    required: true
+  - name: SPLUNK_INDEX
+    required: true
+  - name: SPLUNK_HECTOKEN
+    required: true
+  - name: SPLUNK_O11YTOKEN
+    required: true
+  - name: LIMITS_CPU
+    displayName: CPU limit for the container
+    value: "300m"
+    required: false
+  - name: LIMITS_MEMORY
+    displayName: Memory limit for the container
+    value: "512Mi"
+    required: false
+  - name: REQUESTS_CPU
+    displayName: CPU request for the container
+    value: "100m"
+    required: false
+  - name: REQUESTS_MEMORY
+    displayName: Memory request for the container
+    value: "200Mi"
+    required: false
